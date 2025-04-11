@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:dio/dio.dart';
 import 'package:isar/isar.dart';
 import 'package:pub_app/models/asset.dart';
 import 'package:pub_app/models/package.dart';
 import 'package:pub_app/repository.dart';
-import 'package:tar/tar.dart';
 
 class PackageAndVersion {
   PackageAndVersion(this.package, this.version);
@@ -25,24 +25,22 @@ Future<void> loadAssets(PackageAndVersion p) async {
   Asset? changelog;
 
   final targz = await Repository(Dio()).downloadPackage(p.package, p.version);
-  final tar = gzip.decode(targz);
+  final tar = GZipDecoder().decodeBytes(targz);
+  final archive = TarDecoder().decodeBytes(tar);
 
-  final reader = TarReader(Stream.value(tar));
-  while (await reader.moveNext()) {
-    final entry = reader.current;
-
-    if (entry.type == TypeFlag.reg) {
-      if (readme == null && entry.name.toLowerCase() == 'readme.md') {
-        final content = await entry.contents.transform(utf8.decoder).join();
+  for (final file in archive) {
+    if (file.isFile) {
+      final name = file.name.toLowerCase();
+      if (readme == null && name == 'readme.md') {
+        final content = utf8.decode(file.content as List<int>);
         readme = Asset(
           package: p.package,
           version: p.version,
           kind: AssetKind.readme,
           content: content,
         );
-      } else if (changelog == null &&
-          entry.name.toLowerCase() == 'changelog.md') {
-        final content = await entry.contents.transform(utf8.decoder).join();
+      } else if (changelog == null && name == 'changelog.md') {
+        final content = utf8.decode(file.content as List<int>);
         changelog = Asset(
           package: p.package,
           version: p.version,
